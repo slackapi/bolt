@@ -55,6 +55,64 @@ describe('App', () => {
         assert.instanceOf(app, App);
       });
     });
+
+    describe('with unsuccessful single team authorization results', () => {
+      it('should test once and throws multiple times when tokenVerificationEnabled is true', async () => {
+        // Arrange
+        const error = new Error("An API error occurred: something's wrong");
+        const test = sinon.fake.rejects(error);
+        const fakeLogger = createFakeLogger();
+        const overrides = mergeOverrides(withNoopAppMetadata(), withUnsuccessfulBotUserFetchingWebClient(test));
+        const App = await importApp(overrides); // eslint-disable-line  @typescript-eslint/naming-convention, no-underscore-dangle, id-blacklist, id-match
+        const event: ReceiverEvent = {
+          ack: async () => {},
+          body: {
+            type: 'shortcut',
+            team: { id: '' },
+            enterprise: { id: '' },
+            user: { id: '' },
+          },
+        };
+
+        // Act
+        const app = new App({ token: '', signingSecret: '', logger: fakeLogger });
+
+        // Assert
+        assert.equal(await app.processEvent(event).catch((e) => e as Error), error);
+        assert.equal(await app.processEvent(event).catch((e) => e as Error), error); // retry
+        assert.equal(fakeLogger.warn.callCount, 2);
+        assert.equal(fakeLogger.error.callCount, 2);
+        assert.equal(test.callCount, 1);
+      });
+
+      it('should test and throws multiple times when tokenVerificationEnabled is false', async () => {
+        // Arrange
+        const error = new Error("An API error occurred: something's wrong");
+        const test = sinon.fake.rejects(error);
+        const fakeLogger = createFakeLogger();
+        const overrides = mergeOverrides(withNoopAppMetadata(), withUnsuccessfulBotUserFetchingWebClient(test));
+        const App = await importApp(overrides); // eslint-disable-line  @typescript-eslint/naming-convention, no-underscore-dangle, id-blacklist, id-match
+        const event: ReceiverEvent = {
+          ack: async () => {},
+          body: {
+            type: 'shortcut',
+            team: { id: '' },
+            enterprise: { id: '' },
+            user: { id: '' },
+          },
+        };
+
+        // Act
+        const app = new App({ token: '', signingSecret: '', logger: fakeLogger, tokenVerificationEnabled: false });
+
+        // Assert
+        assert.equal(await app.processEvent(event).catch((e) => e as Error), error);
+        assert.equal(await app.processEvent(event).catch((e) => e as Error), error); // retry
+        assert.equal(fakeLogger.warn.callCount, 2);
+        assert.equal(fakeLogger.error.callCount, 2);
+        assert.equal(test.callCount, 2);
+      });
+    });
     it('should succeed with an authorize callback', async () => {
       // Arrange
       const authorizeCallback = sinon.fake();
@@ -1909,6 +1967,18 @@ function withSuccessfulBotUserFetchingWebClient(botId: string, botUserId: string
               },
             },
           }),
+        };
+      },
+    },
+  };
+}
+
+function withUnsuccessfulBotUserFetchingWebClient(test: SinonSpy): Override {
+  return {
+    '@slack/web-api': {
+      WebClient: class {
+        public auth = {
+          test,
         };
       },
     },
