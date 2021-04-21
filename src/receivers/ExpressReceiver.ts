@@ -4,6 +4,7 @@ import { createServer, Server, ServerOptions } from 'http';
 import { createServer as createHttpsServer, Server as HTTPSServer, ServerOptions as HTTPSServerOptions } from 'https';
 import { ListenOptions } from 'net';
 import express, { Request, Response, Application, RequestHandler, Router } from 'express';
+import * as core from 'express-serve-static-core';
 import rawBody from 'raw-body';
 import querystring from 'querystring';
 import crypto from 'crypto';
@@ -33,6 +34,7 @@ export interface ExpressReceiverOptions {
   installationStore?: InstallProviderOptions['installationStore']; // default MemoryInstallationStore
   scopes?: InstallURLOptions['scopes'];
   installerOptions?: InstallerOptions;
+  router?: core.Router;
 }
 
 // Additional Installer Options
@@ -53,7 +55,7 @@ interface InstallerOptions {
  */
 export default class ExpressReceiver implements Receiver {
   /* Express app */
-  public app: Application;
+  public app: Application | undefined;
 
   private server?: Server;
 
@@ -79,8 +81,9 @@ export default class ExpressReceiver implements Receiver {
     installationStore = undefined,
     scopes = undefined,
     installerOptions = {},
+    router = undefined,
   }: ExpressReceiverOptions) {
-    this.app = express();
+    this.app = router ? undefined : express();
 
     if (typeof logger !== 'undefined') {
       this.logger = logger;
@@ -106,7 +109,7 @@ export default class ExpressReceiver implements Receiver {
     this.processBeforeResponse = processBeforeResponse;
 
     const endpointList = typeof endpoints === 'string' ? [endpoints] : Object.values(endpoints);
-    this.router = Router();
+    this.router = router ?? Router();
     endpointList.forEach((endpoint) => {
       this.router.post(endpoint, ...expressMiddleware);
     });
@@ -153,7 +156,7 @@ export default class ExpressReceiver implements Receiver {
       });
     }
 
-    this.app.use(this.router);
+    this.app?.use(this.router);
   }
 
   private async requestHandler(req: Request, res: Response): Promise<void> {
@@ -217,16 +220,21 @@ export default class ExpressReceiver implements Receiver {
   }
 
   // TODO: can this method be defined as generic instead of using overloads?
-  public start(port: number): Promise<Server>;
-  public start(portOrListenOptions: number | ListenOptions, serverOptions?: ServerOptions): Promise<Server>;
+  // TODO: if a router is provided, this is no-op, and so the parameters are useless. How to resolve this?
+  public start(port: number): Promise<Server | void>;
+  public start(portOrListenOptions: number | ListenOptions, serverOptions?: ServerOptions): Promise<Server | void>;
   public start(
     portOrListenOptions: number | ListenOptions,
     httpsServerOptions?: HTTPSServerOptions,
-  ): Promise<HTTPSServer>;
+  ): Promise<HTTPSServer | void>;
   public start(
     portOrListenOptions: number | ListenOptions,
     serverOptions: ServerOptions | HTTPSServerOptions = {},
-  ): Promise<Server | HTTPSServer> {
+  ): Promise<Server | HTTPSServer | void> {
+    if (!this.app) {
+      return Promise.resolve();
+    }
+
     let createServerFn: typeof createServer | typeof createHttpsServer = createServer;
 
     // Decide which kind of server, HTTP or HTTPS, by search for any keys in the serverOptions that are exclusive to HTTPS
@@ -282,6 +290,10 @@ export default class ExpressReceiver implements Receiver {
   // TODO: the arguments should be defined as the arguments to close() (which happen to be none), but for sake of
   // generic types
   public stop(): Promise<void> {
+    if (!this.app) {
+      return Promise.resolve();
+    }
+
     return new Promise((resolve, reject) => {
       if (this.server === undefined) {
         return reject(new ReceiverInconsistentStateError('The receiver cannot be stopped because it was not started.'));
