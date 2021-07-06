@@ -5,7 +5,7 @@
   - Accomplishes a simple update action 
   - Runs a secondary parse script
  */
-import 'dotenv/config';
+// import 'dotenv/config';
 import contentful from 'contentful-management';
 
 console.log('TEST: HAS API TOKEN:', process.env.CONTENTFUL_API_KEY !== undefined, process.env.CONTENTFUL_API_KEY !== null);
